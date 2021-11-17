@@ -1,0 +1,23 @@
+# use Ganache's forked mainnet mode as the default network
+# NOTE: You don't *have* to do this, but it is often helpful for testing
+networks:
+  default: bsc-main-fork
+
+# automatically fetch contract sources from Etherscan
+autofetch_sources: True
+
+# require OpenZepplin Contracts
+dependencies:
+  - OpenZeppelin/openzeppelin-contracts@4.2.0
+  - Uniswap/uniswap-v2-core@1.0.1
+  # - Uniswap/uniswap-v2-periphery@1.0.0-beta.0
+
+# path remapping to support imports from GitHub/NPM
+compiler:
+  solc:
+    version: 0.8.4
+    optimize: true
+    runs: 200
+    remappings:
+      - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.2.0"
+      - "@uniswap/v2-core=Uniswap/uniswap-v2-core@1.0.1"
