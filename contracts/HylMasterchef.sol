@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.7;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../interfaces/IRewarder.sol";
+interface IGovToken is IERC20 {
+    function mint(address _to, uint _amount) external;
+}
 //Base masterchef code is taken from ConvexFinance
 //Refactor and rewritten to work without SafeMath
 
 contract HylMasterchef is Ownable {
     using SafeERC20 for IERC20;
+    using SafeERC20 for IGovToken;
 
+    mapping (uint => uint) public rewardsForPool;
     // Info of each user.
     struct UserInfo {
         uint256 amount; // How many LP tokens the user has provided.
@@ -37,7 +42,7 @@ contract HylMasterchef is Ownable {
     }
 
     //hyl
-    IERC20 public hyl;
+    IGovToken public hyl;
     // Block number when bonus HYL period ends.
     uint256 public bonusEndBlock;
     // HYL tokens created per block.
@@ -67,7 +72,7 @@ contract HylMasterchef is Ownable {
     );
 
     constructor(
-        IERC20 _hyl,
+        IGovToken _hyl,
         uint256 _rewardPerBlock,
         uint256 _startBlock,
         uint256 _bonusEndBlock
@@ -149,8 +154,14 @@ contract HylMasterchef is Ownable {
                  / totalAlloc;
     }
 
+
+    function _calculateBonus(uint256 _baseReward, uint256 _rewardsTotal) internal view returns (uint256) {
+        //This boosts rewards based on profits
+        return (((_baseReward  * scale) / _rewardsTotal) * _baseReward) / scale;
+    }
+
     // View function to see pending CVXs on frontend.
-    function pendingCvx(uint256 _pid, address _user)
+    function pendingHyl(uint256 _pid, address _user)
         external
         view
         returns (uint256)
@@ -167,7 +178,9 @@ contract HylMasterchef is Ownable {
             uint256 hylReward =_getReward(multiplier, rewardPerBlock, pool.allocPoint, totalAllocPoint); 
             accHylPerShare += (hylReward *scale) / (lpSupply);
         }
-        return ((user.amount *accHylPerShare) / (scale)) - (user.rewardDebt);
+        uint256 baseReward =  ((user.amount *accHylPerShare) / (scale)) - (user.rewardDebt);
+        uint256 bonusReward = _calculateBonus(baseReward, rewardsForPool[_pid]);
+        return baseReward + bonusReward;
     }
 
     // Update reward vairables for all pools. Be careful of gas spending!
@@ -191,7 +204,8 @@ contract HylMasterchef is Ownable {
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 hylReward =_getReward(multiplier, rewardPerBlock, pool.allocPoint, totalAllocPoint); 
-        //hyl.mint(address(this), hylReward);
+        hyl.mint(address(this), hylReward);
+        rewardsForPool[_pid] += hylReward;
         pool.accHylPerShare +=(hylReward *scale) / (lpSupply);
         pool.lastRewardBlock = block.number;
     }
@@ -200,6 +214,7 @@ contract HylMasterchef is Ownable {
         if (_user.amount > 0) {
             uint256 pending = ((_user.amount *_pool.accHylPerShare) / (scale)) - (_user.rewardDebt);
             safeRewardTransfer(_to, pending);
+            rewardsForPool[_pid] -= pending;
             emit RewardPaid(msg.sender, _pid, pending);
         }
     }
@@ -280,6 +295,11 @@ contract HylMasterchef is Ownable {
         //extra rewards
         _claimExtraReward(pool.rewarder,_pid,msg.sender,user);
 
+    }
+
+    function setRewardPerBlock(uint _newRewardPerBlock) external onlyOwner {
+        rewardPerBlock = _newRewardPerBlock;
+        massUpdatePools();
     }
 
     // Safe hyl transfer function, just in case if rounding error causes pool to not have enough CVXs.
